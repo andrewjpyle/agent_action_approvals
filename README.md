@@ -108,3 +108,13 @@ python runtests.py     # needs `django` importable; wires an in-memory sqlite ap
 ## License
 
 MIT
+
+---
+
+## Part of a larger system
+
+`agent_action_approvals` is one of the reusable pieces pulled out of a private, autonomous build
+system and released on its own — the machine needed it, so it built it, and now
+it's yours too, MIT-licensed.
+
+See the rest of the parts → **https://autonomousaj.com/parts**
