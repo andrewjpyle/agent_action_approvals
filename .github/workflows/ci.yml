@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.10"
+            django: "Django>=4.2,<5"
+          - python: "3.12"
+            django: "Django>=5.2,<6"
+          - python: "3.13"
+            django: "Django"
+    env:
+      TEST_FLOOR: "37"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install the package the way the README says
+        run: |
+          python -m pip install --upgrade pip
+          pip install "${{ matrix.django }}"
+          pip install .
+          python -c "import django; print('Django', django.get_version())"
+      - name: Tests, with a floor on the count
+        run: |
+          set -o pipefail
+          python -B runtests.py 2>&1 | tee test-output.txt
+          ran=$(grep -oE '^Ran [0-9]+ tests?' test-output.txt | grep -oE '[0-9]+')
+          echo "ran=${ran} floor=${TEST_FLOOR}"
+          test -n "$ran"
+          test "$ran" -ge "$TEST_FLOOR"
+      - name: Demo lifecycle runs and its safety lines appear
+        run: |
+          set -o pipefail
+          sh examples/acme_demo/run_demo.sh 2>/dev/null | tee demo-output.txt
+          grep -q 'bot approves: REFUSED' demo-output.txt
+          grep -q 'worker-2: REFUSED to run' demo-output.txt
+          grep -q 'REFUSED: approval .* fingerprint changed since enqueue' demo-output.txt
+          grep -q "status is 'timed_out'" demo-output.txt
+          grep -q 'policy says: DENY (auto-approval disabled (kill-switch off))' demo-output.txt
+          grep -qE '#10 +executing' demo-output.txt

@@ -1,0 +1,116 @@
+# Real output of examples/acme_demo/run_demo.sh, captured 2026-10-02T01:25:52+00:00 at commit 3759e902c.
+# SAMPLE DATA, fictional company. Byte-for-byte the stdout recorded in docs/assets/src/captures/demo_lifecycle.json.
+
+== 1. An agent enqueues actions. Each is a row; nothing runs.
+$ python manage.py approvals enqueue merge_pr "Merge #101: install guide typo" --pr 101
+  enqueued #1 merge_pr: Merge #101: install guide typo. Nothing has run.
+$ python manage.py approvals enqueue merge_pr "Merge #102: billing fix + API docs" --pr 102
+  enqueued #2 merge_pr: Merge #102: billing fix + API docs. Nothing has run.
+$ python manage.py approvals enqueue send_email "Email 40 customers about the outage"
+  enqueued #3 send_email: Email 40 customers about the outage. Nothing has run.
+$ python manage.py approvals list
+  #1   pending   merge_pr   Merge #101: install guide typo
+  #2   pending   merge_pr   Merge #102: billing fix + API docs
+  #3   pending   send_email Email 40 customers about the outage
+
+== 2. A human decides, in a later process. The queue survived the restart.
+$ python manage.py approvals approve 1 --by alice@acme.example
+  #1 approved by alice@acme.example. Still nothing has run; a worker picks it up.
+$ python manage.py approvals decline 2 --by alice@acme.example --reason "touches billing; needs review"
+  #2 declined by alice@acme.example. It will never run.
+$ python manage.py approvals approve 3 --by alice@acme.example
+  #3 approved by alice@acme.example. Still nothing has run; a worker picks it up.
+
+== 3. A worker runs only what was approved.
+$ python manage.py approvals work
+  worker: running #1 merge_pr
+  executor: merged PR #101 (simulated, no network)
+  worker: #1 -> done (ok=True)
+  worker: running #3 send_email
+  worker: #3 -> failed (ok=False)
+$ python manage.py approvals list
+  #1   done      merge_pr   Merge #101: install guide typo decided_by=alice@acme.example result={"merged_pr": 101, "ok": true}
+  #2   declined  merge_pr   Merge #102: billing fix + API docs decided_by=alice@acme.example result={"decline_reason": "touches billing; needs review"}
+  #3   failed    send_email Email 40 customers about the outage decided_by=alice@acme.example result={"error": "SMTP relay refused the connection (simulated)", "ok": false, "traceback": "<7 lines>"}
+
+== 4. Two deciders race on one row. Exactly one wins.
+$ python manage.py approvals enqueue merge_pr "Merge #103: changelog" --pr 103
+  enqueued #4 merge_pr: Merge #103: changelog. Nothing has run.
+$ python manage.py approvals race-decide 4
+  both copies loaded: alice sees pending, bot sees pending
+  alice declines: ok
+  bot approves: REFUSED (cannot approve approval 50029a00-43b8-47d4-be5e-0396c8d89bb7: status is now 'declined' (changed by another process), expected 'pending')
+
+== 5. Two workers get the same approved row. The executor runs once.
+$ python manage.py approvals enqueue merge_pr "Merge #101 again (retried job)" --pr 101
+  enqueued #5 merge_pr: Merge #101 again (retried job). Nothing has run.
+$ python manage.py approvals approve 5 --by alice@acme.example
+  #5 approved by alice@acme.example. Still nothing has run; a worker picks it up.
+$ python manage.py approvals race-work 5
+  both workers loaded #5: approved / approved
+  executor: merged PR #101 (simulated, no network)
+  worker-1: executed
+  worker-2: REFUSED to run (cannot mark_executing approval 7b394736-c83c-4282-85e6-c8cb85bd511e: status is now 'done' (changed by another process), expected 'approved')
+
+== 6. Bait-and-switch: the PR gains a code file after review.
+$ python manage.py approvals enqueue merge_pr "Merge #101: install guide" --pr 101 --fingerprint-pr
+  enqueued #6 merge_pr: Merge #101: install guide (fingerprint 46da2f7801cb284d). Nothing has run.
+(a commit adding src/deploy.py lands on PR #101)
+$ python manage.py approvals approve 6 --by alice@acme.example --check-fingerprint
+  REFUSED: approval 7a881267-c942-48bf-b624-2b6e9fb6486f: fingerprint changed since enqueue ('46da2f7801cb284d' -> '766527c76a4b779e')
+$ python manage.py approvals list
+  #1   done      merge_pr   Merge #101: install guide typo decided_by=alice@acme.example result={"merged_pr": 101, "ok": true}
+  #2   declined  merge_pr   Merge #102: billing fix + API docs decided_by=alice@acme.example result={"decline_reason": "touches billing; needs review"}
+  #3   failed    send_email Email 40 customers about the outage decided_by=alice@acme.example result={"error": "SMTP relay refused the connection (simulated)", "ok": false, "traceback": "<7 lines>"}
+  #4   declined  merge_pr   Merge #103: changelog decided_by=alice@acme.example result={"decline_reason": "CI is red"}
+  #5   done      merge_pr   Merge #101 again (retried job) decided_by=alice@acme.example result={"merged_pr": 101, "ok": true}
+  #6   pending   merge_pr   Merge #101: install guide
+
+== 7. Expiry: stale requests time out instead of waiting forever.
+$ python manage.py approvals enqueue merge_pr "Merge #101: from last week" --pr 101 --backdate-hours 30
+  enqueued #7 merge_pr: Merge #101: from last week (backdated 30h). Nothing has run.
+$ python manage.py approvals expire --older-than-hours 24
+  timed out 1 pending approval(s) older than 24h
+$ python manage.py approvals approve 7 --by alice@acme.example
+  REFUSED: cannot approve approval 9d663899-afee-493b-8496-bb0c2f411417: status is 'timed_out', expected 'pending'
+
+== 8. Auto-approval ships dark, then opens exactly one lane.
+$ python manage.py approvals enqueue merge_pr "Merge #101: docs only" --pr 101
+  enqueued #8 merge_pr: Merge #101: docs only. Nothing has run.
+$ python manage.py approvals enqueue merge_pr "Merge #102: has code" --pr 102
+  enqueued #9 merge_pr: Merge #102: has code. Nothing has run.
+$ python manage.py approvals auto 8
+  policy says: DENY (auto-approval disabled (kill-switch off))
+$ export ACME_AUTO_APPROVE_ENABLED=1
+$ python manage.py approvals auto 8
+  policy says: APPROVE (docs-only + CI green)
+  #8 auto-approved
+$ python manage.py approvals auto 9
+  policy says: DENY (not docs-only: src/billing.py)
+$ python manage.py approvals work
+  worker: running #8 merge_pr
+  executor: merged PR #101 (simulated, no network)
+  worker: #8 -> done (ok=True)
+
+== 9. A worker process dies mid-execution (no exception, no cleanup).
+$ python manage.py approvals enqueue merge_pr "Merge #101: final docs pass" --pr 101
+  enqueued #10 merge_pr: Merge #101: final docs pass. Nothing has run.
+$ python manage.py approvals approve 10 --by alice@acme.example
+  #10 approved by alice@acme.example. Still nothing has run; a worker picks it up.
+$ python manage.py approvals work
+  worker: running #10 merge_pr
+  executor: merging PR #101 ... worker process killed (simulated crash)
+(worker exited with status 137)
+$ python manage.py approvals work
+  worker: nothing approved to run
+$ python manage.py approvals list
+  #1   done      merge_pr   Merge #101: install guide typo decided_by=alice@acme.example result={"merged_pr": 101, "ok": true}
+  #2   declined  merge_pr   Merge #102: billing fix + API docs decided_by=alice@acme.example result={"decline_reason": "touches billing; needs review"}
+  #3   failed    send_email Email 40 customers about the outage decided_by=alice@acme.example result={"error": "SMTP relay refused the connection (simulated)", "ok": false, "traceback": "<7 lines>"}
+  #4   declined  merge_pr   Merge #103: changelog decided_by=alice@acme.example result={"decline_reason": "CI is red"}
+  #5   done      merge_pr   Merge #101 again (retried job) decided_by=alice@acme.example result={"merged_pr": 101, "ok": true}
+  #6   pending   merge_pr   Merge #101: install guide
+  #7   timed_out merge_pr   Merge #101: from last week decided_by=timeout
+  #8   done      merge_pr   Merge #101: docs only decided_by=auto-policy auto result={"merged_pr": 101, "ok": true}
+  #9   pending   merge_pr   Merge #102: has code
+  #10  executing merge_pr   Merge #101: final docs pass decided_by=alice@acme.example executing_since=01:25:52Z

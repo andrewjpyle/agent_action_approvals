@@ -46,7 +46,7 @@ class StateMachine(TestCase):
         a = _pending()
         a.decline(by="bob")
         with self.assertRaises(ValueError):
-            a.approve(by="alice")  # already declined — guards the double-decision race
+            a.approve(by="alice")  # already declined, guards the double-decision race
 
     def test_cannot_double_execute(self):
         a = _pending()
@@ -67,16 +67,16 @@ class Fingerprint(TestCase):
     def test_changed_fingerprint_refuses(self):
         a = _pending(diff_fingerprint=fingerprint("docs/a.md"))
         with self.assertRaises(FingerprintMismatch):
-            # The PR gained a code file since it was reviewed → different fp.
+            # The PR gained a code file since it was reviewed -> different fp.
             a.approve(by="alice", expected_fingerprint=fingerprint("docs/a.md", "src/x.py"))
         a.refresh_from_db()
-        self.assertEqual(a.status, ActionApproval.PENDING)  # unchanged — not approved
+        self.assertEqual(a.status, ActionApproval.PENDING)  # unchanged, not approved
 
     def test_no_expected_fingerprint_skips_the_check(self):
-        # A caller that doesn't fingerprint gets the old behavior — the check is
+        # A caller that doesn't fingerprint gets the old behavior, the check is
         # opt-in per approval, not forced.
         a = _pending(diff_fingerprint=fingerprint("docs/a.md"))
-        a.approve(by="alice")  # no expected_fingerprint → no comparison
+        a.approve(by="alice")  # no expected_fingerprint -> no comparison
         self.assertEqual(a.status, ActionApproval.APPROVED)
 
 
@@ -173,7 +173,7 @@ class AutoApproval(TestCase):
         pol.register("merge_pr", explode)
         with mock.patch.dict(os.environ, {"TEST_AUTO_ENABLED": "1"}):
             should, reason = pol.classify(_pending(action_type="merge_pr"))
-        self.assertFalse(should)                 # error → DENY, never approve
+        self.assertFalse(should)                 # error -> DENY, never approve
         self.assertIn("fail-closed", reason)
 
     def test_a_classifier_returning_false_denies(self):
