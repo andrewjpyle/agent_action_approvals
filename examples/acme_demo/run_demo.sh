@@ -17,7 +17,7 @@ run() {
   python manage.py approvals "$@"
 }
 
-python manage.py migrate --verbosity 0
+python manage.py migrate --verbosity 0 || { echo "migrate failed: is the package installed (pip install .) on Python 3.10+?" >&2; exit 1; }
 
 step "1. An agent enqueues actions. Each is a row; nothing runs."
 run enqueue merge_pr "Merge #101: install guide typo" --pr 101

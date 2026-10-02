@@ -33,7 +33,8 @@ action only if it was approved, and at most once.
 ## 60 seconds to the full lifecycle
 
 The package is not on PyPI. Install it from this repo, then run the demo: a fictional company
-(Acme Docs), simulated executors, no network, a throwaway sqlite file.
+(Acme Docs), simulated executors, no network, a throwaway sqlite file. Needs Python 3.10 or newer
+(macOS's built-in `/usr/bin/python3` is 3.9; use a newer one).
 
 ```bash
 git clone https://github.com/andrewjpyle/agent_action_approvals.git
