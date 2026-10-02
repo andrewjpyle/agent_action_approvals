@@ -3,13 +3,10 @@
 
 The app needs Django configured (settings, app registry, an in-memory DB for the
 migration), which a bare ``unittest discover`` can't provide. This wires a
-minimal settings module and runs the suite with Django's own test runner — so the
+minimal settings module and runs the suite with Django's own test runner, so the
 package is testable without a host project.
 
-    python runtests.py          # needs `django` importable (e.g. the backend venv)
-
-The OSS rail invokes this via scripts/oss/run_django_package_tests.py inside the
-backend venv, where Django is on the path.
+    python runtests.py          # needs `django` importable
 """
 import os
 import sys

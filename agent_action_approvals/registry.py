@@ -1,4 +1,4 @@
-"""The executor registry — action_type -> callable, dispatched out-of-band.
+"""The executor registry: action_type -> callable, dispatched out-of-band.
 
 An approved action still has to *run*, and running it is your application's
 business logic: merge the PR, send the email, apply the change. You register one
@@ -8,8 +8,15 @@ EXECUTING -> DONE/FAILED transitions around it, and stores the result.
 Why the registry owns the transitions and not the executor: so a crashed
 executor can never leave a row lying about its state. The registry marks
 EXECUTING before the call and FAILED (with the traceback) on any exception, so
-the queue always reflects reality — a half-finished action is visibly
+the queue always reflects reality: a half-finished action is visibly
 half-finished, not silently still "approved."
+
+What this cannot cover: a worker that dies outright (SIGKILL, OOM, power loss)
+mid-executor. No Python code runs after that, so the row stays EXECUTING with
+``executing_at`` set. That is deliberate: the side effect may or may not have
+happened, and retrying blindly could do it twice. Find those rows with
+``ActionApproval.objects.filter(status="executing", executing_at__lt=cutoff)``
+and resolve them by hand.
 
 Execution is expected to happen out-of-band (a Celery/RQ task, a worker thread)
 so an HTTP approve returns immediately. This module does not choose your task
@@ -51,7 +58,10 @@ class ExecutorRegistry:
     def execute(self, approval) -> dict:
         """Run the executor registered for ``approval.action_type``.
 
-        Requires the approval to be APPROVED. Drives EXECUTING -> DONE/FAILED and
+        Requires the approval to be APPROVED. The APPROVED -> EXECUTING step is
+        an atomic claim: if another worker already claimed this row, this call
+        raises ``InvalidTransition`` BEFORE the executor runs, so the action runs
+        at most once. Drives EXECUTING -> DONE/FAILED and
         persists the result. NEVER raises out of the executor: an executor error
         becomes a FAILED row with the traceback in ``result``, because a raised
         exception in an out-of-band worker is invisible, but a FAILED row is not.
@@ -69,7 +79,7 @@ class ExecutorRegistry:
         approval.mark_executing()
         try:
             result = fn(approval) or {}
-        except Exception as exc:  # noqa: BLE001 — an out-of-band raise is invisible
+        except Exception as exc:  # noqa: BLE001 (an out-of-band raise is invisible)
             logger.exception("executor for %s failed (approval %s)",
                              approval.action_type, getattr(approval, "uuid", "?"))
             result = {
