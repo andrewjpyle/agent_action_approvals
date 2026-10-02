@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-action-approvals"
+version = "0.2.0"
+description = "A durable human-in-the-loop approval queue for agent-initiated actions, as a small Django app."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Andrew Pyle" }]
+requires-python = ">=3.10"
+dependencies = ["Django>=4.2"]
+classifiers = [
+    "Framework :: Django",
+    "Programming Language :: Python :: 3",
+]
+
+[project.urls]
+Homepage = "https://github.com/andrewjpyle/agent_action_approvals"
+
+[tool.setuptools]
+packages = ["agent_action_approvals", "agent_action_approvals.migrations"]
