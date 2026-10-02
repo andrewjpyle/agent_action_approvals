@@ -188,7 +188,7 @@ class ActionApproval(models.Model):
             )
 
     def _transition(self, expected: str, action: str, **fields) -> None:
-        updated = type(self).objects.filter(pk=self.pk).update(**fields)
+        updated = type(self).objects.filter(pk=self.pk, status=expected).update(**fields)
         if updated != 1:
             # Another process moved the row first. Reload so this instance stops
             # lying about the state, then refuse.
